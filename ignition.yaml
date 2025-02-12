@@ -1,0 +1,57 @@
+variant: fcos
+version: 1.6.0
+
+## Enable ttyS0 Serial Console for Xterm.JS
+kernel_arguments:
+  should_exist:
+    - console=tty0
+    - console=ttyS0,115200n8
+
+passwd:
+  users:
+    # Set "coreos" user settings, including keys and passwd
+    - name: coreos
+      ssh_authorized_keys:
+        - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINk66lkWvK4eAat3QE6fxF7u+vTdFKNmPGdDOdBS2sNn eddsa-key-20250124"
+      primary_group: wheel
+      shell: /bin/bash
+
+  files:
+    - path: /etc/hostname
+      mode: 0644
+      contents:
+        inline: | # Please Change this
+          core.festa.lan
+
+systemd:
+  units:
+    # Enable Serial Console for Proxmox Shell/xTerm.js
+    - name: getty@ttyS0.service
+      enabled: true
+      dropins:
+        - name: autologin.conf
+          contents: |
+            [Service]
+            ExecStart=-/usr/sbin/agetty --autologin core --noclear %I $TERM
+    # Create Portainer Service
+    - name: docker-portainer.service
+      enabled: true
+      contents: |-
+        [Unit]
+        Description=Portainer Admin Container
+        After=docker.service
+        Requires=docker.service network.target network-online.target
+
+        [Service]
+        Type=oneshot
+        RemainAfterExit=yes
+        TimeoutStartSec=0
+        ExecStartPre=-/usr/bin/docker stop portainer
+        ExecStartPre=-/usr/bin/docker rm portainer
+        ExecStartPre=/usr/bin/docker pull portainer/portainer-ee
+        ExecStartPre=/usr/bin/install -d /var/mounts/portainer/data
+        ExecStart=/usr/bin/docker run --ulimit nofile=65536 --privileged=true -d -p 9000:9000 --name portainer --restart always -v /var/run/docker.sock:/var/run/docker.sock -v /var/mounts/portainer/data:/data --label "traefik.enable=true" --label "traefik.http.services.portainer.loadbalancer.server.port=9000" --label "traefik.http.routers.portainer.rule=Host(\`admin.${DEPOT_DOMAIN_NAME}\`)" --label "traefik.http.routers.portainer.entrypoints=websecure" --label "traefik.http.routers.portainer.tls.certresolver=mydnschallenge" portainer/portainer-ee
+        ExecStop=/usr/bin/docker stop -t 15 portainer
+
+        [Install]
+        WantedBy=multi-user.target

@@ -1,0 +1,4 @@
+include:
+  - ./authentik/compose.yml
+  - ./freeipa/compose.yml
+  - ./vaultwarden/compose.yml

@@ -1,0 +1,69 @@
+variant: fcos
+version: 1.6.0
+passwd:
+  users:
+    - name: coreos
+      ssh_authorized_keys:
+        - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINk66lkWvK4eAat3QE6fxF7u+vTdFKNmPGdDOdBS2sNn eddsa-key-20250124"
+      primary_group: wheel
+      shell: /bin/bash
+kernel_arguments:
+  should_exist:
+    - console=tty0
+    - console=ttyS0,115200n8
+storage:
+  disks:
+    - device: /dev/disk/by-id/coreos-boot-disk
+      wipe_table: false
+      partitions:
+        - number: 4
+          label: root
+          size_mib: 8192
+          resize: true
+        - size_mib: 0
+          label: var
+  files:
+    - path: /etc/hostname
+      mode: 0644
+      contents:
+        inline: |
+          node1.festa.lan
+    - path: /etc/sysctl.d/99-custom.conf
+      contents:
+        inline: |
+          net.core.rmem_max=4194304
+          net.core.wmem_max=1048576
+    - path: /etc/modprobe.d/i915.conf
+      contents:
+        inline: |
+          options i915 enable_guc=2
+systemd:
+  units:
+    - name: getty@ttyS0.service
+      enabled: true
+      dropins:
+        - name: autologin.conf
+          contents: |
+            [Service]
+            ExecStart=-/usr/sbin/agetty --autologin core --noclear %I $TERM
+    - name: docker-portainer.service
+      enabled: true
+      contents: |-
+        [Unit]
+        Description=Portainer Admin Container
+        After=docker.service
+        Requires=docker.service network.target network-online.target
+
+        [Service]
+        Type=oneshot
+        RemainAfterExit=yes
+        TimeoutStartSec=0
+        ExecStartPre=-/usr/bin/docker stop portainer
+        ExecStartPre=-/usr/bin/docker rm portainer
+        ExecStartPre=/usr/bin/docker pull portainer/portainer-ee
+        ExecStartPre=/usr/bin/install -d /var/mounts/portainer/data
+        ExecStart=/usr/bin/docker run --ulimit nofile=65536 --privileged=true -d -p 2000:9000 --name portainer --restart always -v /var/run/docker.sock:/var/run/docker.sock -v /var/mounts/portainer/data:/data --label "traefik.enable=true" --label "traefik.http.services.portainer.loadbalancer.server.port=9000" --label "traefik.http.routers.portainer.rule=Host(\`admin.${DEPOT_DOMAIN_NAME}\`)" --label "traefik.http.routers.portainer.entrypoints=websecure" --label "traefik.http.routers.portainer.tls.certresolver=mydnschallenge" portainer/portainer-ee
+        ExecStop=/usr/bin/docker stop -t 15 portainer
+
+        [Install]
+        WantedBy=multi-user.target
